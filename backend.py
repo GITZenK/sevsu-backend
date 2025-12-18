@@ -2,10 +2,8 @@ import os
 import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import requests
-from bs4 import BeautifulSoup
 import datetime
 import uvicorn
 import re
@@ -15,7 +13,7 @@ import time
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Selenium и драйвер
+# Selenium
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -26,14 +24,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 app = FastAPI()
 
-# --- ВАЖНО: МАКСИМАЛЬНО ОТКРЫТЫЙ CORS ---
-# Это разрешает доступ к API с любого устройства (телефона, браузера)
+# --- CORS: Разрешаем доступ всем ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Разрешить всем
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Разрешить любые методы (GET, POST, OPTIONS)
-    allow_headers=["*"],  # Разрешить любые заголовки
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- МОДЕЛИ ---
@@ -46,23 +43,14 @@ class ScheduleRequest(BaseModel):
     week: int
     year: int
 
-class ChatRequest(BaseModel):
-    message: str
-    bot_type: str
-
-# --- ГЛАВНАЯ СТРАНИЦА (Чтобы не было 404) ---
+# --- ГЛАВНАЯ СТРАНИЦА (ИСПРАВЛЕНИЕ 404) ---
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "message": "Сервер SevasU работает!",
-        "docs_url": "/docs"  # Ссылка на документацию API
+        "message": "Сервер SevasU работает! Приложение может подключаться.",
+        "time": datetime.datetime.now().isoformat()
     }
-
-# --- ПРОСТАЯ ПРОВЕРКА (PING) ---
-@app.get("/api/ping")
-def ping():
-    return {"pong": True}
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 def get_time_by_para(para_num):
@@ -118,7 +106,7 @@ def parse_schedule_api(data, week, year):
                 schedule_output.append({"day": day, "lessons": day_lessons})
     return add_dates_to_schedule(schedule_output, monday_date)
 
-# --- ЛОГИКА SELENIUM (С МАСКИРОВКОЙ) ---
+# --- ЛОГИКА SELENIUM ---
 def selenium_full_login(username, password):
     logger.info(f"==> Вход для {username}")
     options = Options()
@@ -126,6 +114,9 @@ def selenium_full_login(username, password):
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    if os.path.exists("/usr/bin/google-chrome"):
+        options.binary_location = "/usr/bin/google-chrome"
     
     driver = None
     try:
@@ -156,12 +147,13 @@ def selenium_full_login(username, password):
 def login(creds: LoginRequest):
     token = selenium_full_login(creds.login, creds.password)
     if token:
-        return {
-            "user": {"fio": creds.login, "group": "Студент", "avatar_initials": creds.login[:2].upper()},
-            "token": token
+        user_data = {
+            "fio": creds.login,
+            "group": "Студент СевГУ",
+            "avatar_initials": creds.login[:2].upper()
         }
-    # Возвращаем 401, чтобы приложение поняло, что вход не удался, а не "ошибка сети"
-    raise HTTPException(status_code=401, detail="Неверный логин/пароль или блокировка СевГУ")
+        return {"user": user_data, "token": token}
+    raise HTTPException(status_code=401, detail="Неверный логин/пароль")
 
 @app.post("/api/schedule")
 def get_schedule(req: ScheduleRequest):
@@ -176,5 +168,5 @@ def get_schedule(req: ScheduleRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # Запуск на порту 8000
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=8000)
