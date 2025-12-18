@@ -31,5 +31,5 @@ COPY . .
 ENV PORT=8000
 EXPOSE 8000
 
-# Запускаем через uvicorn напрямую, чтобы избежать проблем с именами файлов
-CMD ["uvicorn", "backend.py:app", "--host", "0.0.0.0", "--port", "8000"]
+# ИСПРАВЛЕНО: Убрано .py из названия модуля
+CMD ["uvicorn", "backend:app", "--host", "0.0.0.0", "--port", "8000"]
